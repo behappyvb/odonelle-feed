@@ -1,0 +1,51 @@
+name: Update YML feed timestamp
+
+on:
+  schedule:
+    - cron: '0 5 * * *' # 08:00 Moscow (UTC+3)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-feed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Update catalog timestamp
+        run: |
+          python3 - <<'PY'
+          from datetime import datetime, timezone, timedelta
+          from pathlib import Path
+          import re
+
+          path = Path("feed.xml")
+          text = path.read_text(encoding="utf-8")
+          now = datetime.now(timezone(timedelta(hours=3))).isoformat(timespec="seconds")
+          updated, count = re.subn(
+              r'(<yml_catalog\s+date=")[^"]*(")',
+              lambda m: m.group(1) + now + m.group(2),
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("Missing yml_catalog date attribute")
+          path.write_text(updated, encoding="utf-8")
+          PY
+
+      - name: Commit updated feed
+        run: |
+          if git diff --quiet -- feed.xml; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add feed.xml
+          git commit -m "chore: refresh YML feed timestamp"
+          git push
